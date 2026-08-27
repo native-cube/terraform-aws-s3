@@ -1,0 +1,72 @@
+mock_provider "aws" {
+  override_during = plan
+}
+
+run "invalid_encryption_algorithm" {
+  command = plan
+
+  variables {
+    bucket_name   = "unit-invalid-encryption"
+    sse_algorithm = "DES"
+  }
+
+  expect_failures = [var.sse_algorithm]
+}
+
+run "invalid_cors_method" {
+  command = plan
+
+  variables {
+    bucket_name = "unit-invalid-cors"
+    cors_rules = [{
+      allowed_methods = ["PATCH"]
+      allowed_origins = ["https://www.example.com"]
+    }]
+  }
+
+  expect_failures = [var.cors_rules]
+}
+
+run "acl_requires_compatible_ownership" {
+  command = plan
+
+  variables {
+    bucket_name = "unit-invalid-acl"
+    enable_acl  = true
+    acl         = "private"
+  }
+
+  expect_failures = [aws_s3_bucket_acl.main[0]]
+}
+
+run "replication_requires_versioning" {
+  command = plan
+
+  variables {
+    bucket_name                      = "unit-invalid-replication"
+    enable_replication_configuration = true
+    replication_configuration = {
+      role = "arn:aws:iam::111122223333:role/unit-s3-replication"
+      rule = [{
+        id     = "all-objects"
+        status = "Enabled"
+        destination = {
+          bucket = "arn:aws:s3:::unit-destination"
+        }
+      }]
+    }
+  }
+
+  expect_failures = [aws_s3_bucket_replication_configuration.main[0]]
+}
+
+run "website_requires_index_or_redirect" {
+  command = plan
+
+  variables {
+    bucket_name                  = "unit-invalid-website"
+    enable_website_configuration = true
+  }
+
+  expect_failures = [aws_s3_bucket_website_configuration.main[0]]
+}
