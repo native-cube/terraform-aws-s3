@@ -1,8 +1,6 @@
 locals {
   common_tags = var.tags
 
-  general_bucket_id = try(aws_s3_bucket.main[0].id, null)
-
   access_points = var.enable_access_points ? {
     for access_point in var.access_points : access_point.name => access_point
   } : {}

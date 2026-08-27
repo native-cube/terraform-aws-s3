@@ -11,3 +11,5 @@ terraform.tfvars
 terraform.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
+.terraform.tfstate.lock.info
+*.tfplan

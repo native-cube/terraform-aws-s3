@@ -1,5 +1,7 @@
 # Terraform AWS S3 Module
 
+[![Terraform Checks](https://github.com/native-cube/terraform-aws-s3/actions/workflows/terraform-pr.yml/badge.svg)](https://github.com/native-cube/terraform-aws-s3/actions/workflows/terraform-pr.yml)
+
 Terraform module for creating production-oriented Amazon S3 resources. The module is implemented directly with HashiCorp AWS provider resources and does not wrap another S3 module.
 
 The module supports:
@@ -19,7 +21,8 @@ The root module does not create KMS keys, IAM roles, notification destinations, 
 
 ```hcl
 module "artifacts" {
-  source = "./modules/s3"
+  source  = "native-cube/s3/aws"
+  version = "~> 1.0"
 
   bucket_name = "acme-production-artifacts"
   versioning  = "Enabled"
@@ -49,6 +52,12 @@ module "artifacts" {
   }
 }
 ```
+
+## Compatibility and Versioning
+
+Version 1.x requires Terraform 1.5 or newer and HashiCorp AWS provider 6.61 or newer within major version 6. The minimum and latest supported combinations are exercised separately in CI.
+
+This module follows semantic versioning. Pin a compatible module version in production and review [CHANGELOG.md](CHANGELOG.md) before upgrading. Major releases may contain breaking changes; minor and patch releases preserve the documented 1.x interface.
 
 ## Security and Operations
 
@@ -91,7 +100,7 @@ Set `create_bucket = false` and `create_directory_bucket = true` for directory-o
 
 ## Development
 
-Run `make check` to verify formatting, generated documentation, initialization, native Terraform tests, and every example. Run `make docs` after changing inputs, outputs, resources, or version constraints. Optional `make lint` and `make security` targets run TFLint and Trivy.
+Run `make check` to verify formatting, generated documentation, initialization, native Terraform tests, and every example. Run `make docs` after changing inputs, outputs, resources, or version constraints. `make release-check` additionally requires TFLint and Trivy and runs the complete pre-release gate. See [RELEASING.md](RELEASING.md) for the maintainer checklist.
 
 ## Module Documentation
 

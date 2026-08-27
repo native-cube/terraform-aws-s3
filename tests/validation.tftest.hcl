@@ -70,3 +70,64 @@ run "website_requires_index_or_redirect" {
 
   expect_failures = [aws_s3_bucket_website_configuration.main[0]]
 }
+
+run "bucket_prefix_toggle_requires_prefix" {
+  command = plan
+
+  variables {
+    use_bucket_prefix = true
+  }
+
+  expect_failures = [aws_s3_bucket.main[0]]
+}
+
+run "invalid_intelligent_tiering_days" {
+  command = plan
+
+  variables {
+    bucket_name = "unit-invalid-tiering"
+    intelligent_tiering_configurations = {
+      archive = {
+        tiering = [{
+          access_tier = "ARCHIVE_ACCESS"
+          days        = 30
+        }]
+      }
+    }
+  }
+
+  expect_failures = [var.intelligent_tiering_configurations]
+}
+
+run "lifecycle_rule_requires_action" {
+  command = plan
+
+  variables {
+    bucket_name = "unit-invalid-lifecycle"
+    lifecycle_rules = [{
+      id     = "no-action"
+      status = "Enabled"
+    }]
+  }
+
+  expect_failures = [var.lifecycle_rules]
+}
+
+run "metadata_retention_requires_valid_days" {
+  command = plan
+
+  variables {
+    bucket_name = "unit-invalid-metadata-retention"
+    metadata_configuration = {
+      inventory_table_configuration = {}
+      journal_table_configuration = {
+        record_expiration = {
+          expiration = "ENABLED"
+          days       = 6
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.metadata_configuration]
+}

@@ -29,7 +29,7 @@ variable "access_control_policy" {
   default = null
 
   validation {
-    condition = var.access_control_policy == null || (
+    condition = var.access_control_policy == null ? true : (
       trimspace(var.access_control_policy.owner.id) != "" &&
       alltrue([
         for grant in var.access_control_policy.grant :
@@ -357,10 +357,12 @@ variable "intelligent_tiering_configurations" {
       length(distinct([for tier in configuration.tiering : tier.access_tier])) == length(configuration.tiering) &&
       alltrue([
         for tier in configuration.tiering :
-        contains(["ARCHIVE_ACCESS", "DEEP_ARCHIVE_ACCESS"], tier.access_tier) && tier.days > 0
+        contains(["ARCHIVE_ACCESS", "DEEP_ARCHIVE_ACCESS"], tier.access_tier) &&
+        tier.days <= 730 &&
+        (tier.access_tier == "ARCHIVE_ACCESS" ? tier.days >= 90 : tier.days >= 180)
       ])
     ])
-    error_message = "Intelligent-Tiering configurations require a non-empty name, Enabled or Disabled status, and unique positive-day ARCHIVE_ACCESS or DEEP_ARCHIVE_ACCESS tiers."
+    error_message = "Intelligent-Tiering configurations require a non-empty name, Enabled or Disabled status, and unique tiers between 90-730 days for ARCHIVE_ACCESS or 180-730 days for DEEP_ARCHIVE_ACCESS."
   }
 }
 
@@ -395,8 +397,7 @@ variable "inventory_configurations" {
       contains(["Daily", "Weekly"], configuration.schedule_frequency) &&
       contains(["CSV", "ORC", "Parquet"], configuration.destination.format) &&
       trimspace(configuration.destination.bucket_arn) != "" &&
-      (
-        configuration.destination.encryption == null ||
+      (configuration.destination.encryption == null ? true :
         ((configuration.destination.encryption.sse_kms != null) != configuration.destination.encryption.sse_s3)
       )
     ])
@@ -482,10 +483,55 @@ variable "lifecycle_rules" {
         for rule in var.lifecycle_rules :
         trimspace(rule.id) != "" &&
         contains(["Disabled", "Enabled"], rule.status) &&
-        try(rule.abort_incomplete_multipart_upload.days_after_initiation > 0, true)
+        try(rule.abort_incomplete_multipart_upload.days_after_initiation > 0, true) &&
+        (
+          rule.abort_incomplete_multipart_upload != null ||
+          rule.expiration != null ||
+          length(coalesce(rule.transition, [])) > 0 ||
+          rule.noncurrent_version_expiration != null ||
+          length(coalesce(rule.noncurrent_version_transition, [])) > 0
+        )
       ])
     )
-    error_message = "Lifecycle rule IDs must be unique and non-empty, status must be Enabled or Disabled, and multipart upload cleanup days must be positive."
+    error_message = "Lifecycle rules require unique non-empty IDs, Enabled or Disabled status, at least one action, and positive multipart upload cleanup days."
+  }
+
+  validation {
+    condition = alltrue([
+      for rule in var.lifecycle_rules :
+      (try(rule.filter.tag, null) == null || try(rule.filter.tags, null) == null) &&
+      (
+        rule.expiration == null ||
+        (
+          (try(rule.expiration.days, null) == null ? 0 : 1) +
+          (try(rule.expiration.date, null) == null ? 0 : 1) +
+          (try(rule.expiration.expired_object_delete_marker, null) == null ? 0 : 1) == 1 &&
+          try(rule.expiration.days > 0, true)
+        )
+      )
+    ])
+    error_message = "Lifecycle filters cannot set both tag and tags, and expiration must set exactly one of positive days, date, or expired_object_delete_marker."
+  }
+
+  validation {
+    condition = alltrue([
+      for rule in var.lifecycle_rules :
+      alltrue([
+        for transition in coalesce(rule.transition, []) :
+        (try(transition.days, null) == null) != (try(transition.date, null) == null) &&
+        try(transition.days > 0, true) &&
+        contains(["DEEP_ARCHIVE", "GLACIER", "GLACIER_IR", "INTELLIGENT_TIERING", "ONEZONE_IA", "STANDARD_IA"], transition.storage_class)
+      ]) &&
+      try(rule.noncurrent_version_expiration.noncurrent_days > 0, true) &&
+      try(rule.noncurrent_version_expiration.newer_noncurrent_versions > 0, true) &&
+      alltrue([
+        for transition in coalesce(rule.noncurrent_version_transition, []) :
+        transition.noncurrent_days > 0 &&
+        try(transition.newer_noncurrent_versions > 0, true) &&
+        contains(["DEEP_ARCHIVE", "GLACIER", "GLACIER_IR", "INTELLIGENT_TIERING", "ONEZONE_IA", "STANDARD_IA"], transition.storage_class)
+      ])
+    ])
+    error_message = "Lifecycle transitions must set exactly one positive days value or date, and all current and noncurrent transitions must use a supported storage class and positive day/version values."
   }
 }
 
@@ -604,7 +650,15 @@ variable "metadata_configuration" {
     condition = var.metadata_configuration == null ? true : (
       contains(["DISABLED", "ENABLED"], var.metadata_configuration.inventory_table_configuration.configuration_state) &&
       contains(["DISABLED", "ENABLED"], var.metadata_configuration.journal_table_configuration.record_expiration.expiration) &&
-      try(var.metadata_configuration.journal_table_configuration.record_expiration.days > 0, true) &&
+      (
+        var.metadata_configuration.journal_table_configuration.record_expiration.expiration == "ENABLED" ?
+        try(
+          var.metadata_configuration.journal_table_configuration.record_expiration.days >= 7 &&
+          var.metadata_configuration.journal_table_configuration.record_expiration.days <= 2147483647,
+          false
+        ) :
+        var.metadata_configuration.journal_table_configuration.record_expiration.days == null
+      ) &&
       alltrue([
         for encryption in [
           var.metadata_configuration.inventory_table_configuration.encryption_configuration,
@@ -615,7 +669,7 @@ variable "metadata_configuration" {
         if encryption != null
       ])
     )
-    error_message = "metadata_configuration states must be ENABLED or DISABLED; retention days must be positive; encryption must use AES256 without a KMS key or aws:kms with a KMS key ARN."
+    error_message = "metadata_configuration states must be ENABLED or DISABLED; enabled journal retention requires 7-2147483647 days while disabled retention must omit days; encryption must use AES256 without a KMS key or aws:kms with a KMS key ARN."
   }
 }
 
@@ -656,7 +710,7 @@ variable "object_lock_configuration" {
 
   validation {
     condition = var.object_lock_configuration == null ? true : (
-      var.object_lock_configuration.default_retention == null || (
+      var.object_lock_configuration.default_retention == null ? true : (
         contains(["COMPLIANCE", "GOVERNANCE"], var.object_lock_configuration.default_retention.mode) &&
         (try(var.object_lock_configuration.default_retention.days, null) == null) != (try(var.object_lock_configuration.default_retention.years, null) == null) &&
         try(var.object_lock_configuration.default_retention.days > 0, true) &&

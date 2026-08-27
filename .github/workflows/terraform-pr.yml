@@ -10,6 +10,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
@@ -27,7 +29,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
         with:
-          terraform_version: 1.15.9
+          terraform_version: 1.16.0
           terraform_wrapper: false
 
       - name: Install terraform-docs
@@ -63,6 +65,7 @@ jobs:
         with:
           scan-type: config
           scan-ref: .
+          version: v0.74.0
           hide-progress: true
           exit-code: 1
           severity: HIGH,CRITICAL
@@ -76,12 +79,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - terraform: 1.11.4
-            provider: minimum
-            upgrade: false
-          - terraform: 1.15.9
+          - terraform: 1.5.7
+            provider: 6.61.0
+            run_tests: false
+          - terraform: 1.16.0
             provider: latest-v6
-            upgrade: true
+            run_tests: true
 
     steps:
       - name: Checkout
@@ -93,30 +96,28 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
 
-      - name: Remove locks for latest-provider coverage
-        if: matrix.upgrade
+      - name: Remove dependency locks for compatibility resolution
         run: find . -name .terraform.lock.hcl -delete
 
+      - name: Pin minimum AWS provider
+        if: matrix.provider == '6.61.0'
+        run: sed -i 's/>= 6\.61\.0, < 7\.0\.0/= 6.61.0/' versions.tf
+
       - name: Terraform init
-        run: terraform init -backend=false ${{ matrix.upgrade && '-upgrade' || '' }}
+        run: terraform init -backend=false -upgrade
 
       - name: Terraform validate
         run: terraform validate
 
       - name: Terraform test
+        if: matrix.run_tests
         run: terraform test -no-color
 
       - name: Validate examples
-        env:
-          UPGRADE: ${{ matrix.upgrade }}
         run: |
           for example in examples/*; do
             if [ -d "$example" ]; then
-              if [ "$UPGRADE" = "true" ]; then
-                terraform -chdir="$example" init -backend=false -upgrade
-              else
-                terraform -chdir="$example" init -backend=false
-              fi
+              terraform -chdir="$example" init -backend=false -upgrade
               terraform -chdir="$example" validate
             fi
           done

@@ -8,6 +8,13 @@ resource "aws_s3_bucket" "main" {
   force_destroy       = var.force_destroy
   object_lock_enabled = var.object_lock_enabled || var.object_lock_configuration != null
   tags                = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition     = !var.use_bucket_prefix || var.bucket_prefix != null
+      error_message = "bucket_prefix must be set when use_bucket_prefix is true."
+    }
+  }
 }
 
 resource "aws_s3_directory_bucket" "main" {

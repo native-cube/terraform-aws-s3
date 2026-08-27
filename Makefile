@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 EXAMPLES := $(wildcard examples/*)
 
-.PHONY: help fmt fmt-check docs docs-check init validate test lint security examples-init examples-validate check hooks
+.PHONY: help fmt fmt-check docs docs-check init validate test lint security examples-init examples-validate check release-check hooks
 
 help:
 	@echo "Available targets:"
@@ -18,6 +18,7 @@ help:
 	@echo "  make examples-init      Initialize all examples"
 	@echo "  make examples-validate  Validate all examples"
 	@echo "  make check              Run local CI-style checks"
+	@echo "  make release-check      Run all checks required before creating a release tag"
 	@echo "  make hooks              Enable repo-local Git hooks"
 
 fmt:
@@ -65,6 +66,9 @@ examples-validate:
 	done
 
 check: fmt-check docs-check init validate test examples-init examples-validate
+
+release-check: check lint security
+	git diff --check
 
 hooks:
 	git config core.hooksPath .githooks
